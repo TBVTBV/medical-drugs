@@ -16,27 +16,32 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function hasAuthCookie(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.cookie.includes('sb-') && document.cookie.includes('auth-token');
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
+  // If no auth cookie, we know immediately the user is not logged in
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null);
   const [dbUser, setDbUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(hasAuthCookie);
   const [authError, setAuthError] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
     let isMounted = true;
-    let resolved = false;
 
-    // Failsafe: force loading to false after 10 seconds
+    // Failsafe: force loading to false after 5 seconds
     const timeout = setTimeout(() => {
-      if (isMounted && !resolved) {
-        console.error('Auth loading timed out after 10s');
+      if (isMounted && loading) {
+        console.error('Auth loading timed out after 5s');
         setLoading(false);
         setAuthError('Connection timed out. Check your Supabase configuration and network.');
       }
-    }, 10000);
+    }, 5000);
 
-    const getSession = async () => {
+    const init = async () => {
       try {
         const { data: { user }, error } = await supabase.auth.getUser();
         if (error) console.error('getUser error:', error);
@@ -49,12 +54,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error('Auth session error:', err);
         if (isMounted) setAuthError('Failed to load session');
       } finally {
-        resolved = true;
         clearTimeout(timeout);
         if (isMounted) setLoading(false);
       }
     };
-    getSession();
+    init();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!isMounted) return;

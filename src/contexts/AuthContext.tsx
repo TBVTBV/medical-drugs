@@ -9,6 +9,7 @@ interface AuthContextType {
   supabaseUser: SupabaseUser | null;
   dbUser: User | null;
   loading: boolean;
+  authError: string | null;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -19,41 +20,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null);
   const [dbUser, setDbUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
+    let isMounted = true;
+
     const getSession = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setSupabaseUser(user);
-      if (user) {
-        await fetchOrCreateDbUser(user);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!isMounted) return;
+        setSupabaseUser(user);
+        if (user) {
+          await fetchOrCreateDbUser(user);
+        }
+      } catch (err) {
+        console.error('Auth session error:', err);
+        if (isMounted) setAuthError('Failed to load session');
+      } finally {
+        if (isMounted) setLoading(false);
       }
-      setLoading(false);
     };
     getSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!isMounted) return;
       const user = session?.user ?? null;
       setSupabaseUser(user);
       if (user) {
-        await fetchOrCreateDbUser(user);
+        try {
+          await fetchOrCreateDbUser(user);
+        } catch (err) {
+          console.error('Auth state change error:', err);
+          if (isMounted) setAuthError('Failed to load user profile');
+        }
       } else {
         setDbUser(null);
       }
-      setLoading(false);
+      if (isMounted) setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function fetchOrCreateDbUser(user: SupabaseUser) {
     // Look up by email
-    const { data: existingUser } = await supabase
+    const { data: existingUser, error: lookupError } = await supabase
       .from('users')
       .select('*')
       .eq('email', user.email)
       .single();
+
+    if (lookupError && lookupError.code !== 'PGRST116') {
+      // PGRST116 = no rows found (expected for new users)
+      console.error('User lookup failed:', lookupError);
+      setAuthError(`Database error: ${lookupError.message}`);
+      return;
+    }
 
     if (existingUser) {
       // Check Temp_Admin expiration
@@ -70,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         existingUser.role_expiration_date = null;
       }
       setDbUser(existingUser);
+      setAuthError(null);
       return;
     }
 
@@ -80,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const isFirstUser = (count ?? 0) === 0;
 
-    const { data: newUser } = await supabase
+    const { data: newUser, error: insertError } = await supabase
       .from('users')
       .insert({
         military_id: Math.floor(1000000 + Math.random() * 9000000),
@@ -94,7 +122,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .select()
       .single();
 
+    if (insertError) {
+      console.error('User creation failed:', insertError);
+      setAuthError(`Failed to create user profile: ${insertError.message}`);
+      return;
+    }
+
     setDbUser(newUser);
+    setAuthError(null);
   }
 
   const signInWithGoogle = async () => {
@@ -113,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ supabaseUser, dbUser, loading, signInWithGoogle, signOut }}>
+    <AuthContext.Provider value={{ supabaseUser, dbUser, loading, authError, signInWithGoogle, signOut }}>
       {children}
     </AuthContext.Provider>
   );

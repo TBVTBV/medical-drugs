@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 export default function LoginPage() {
-  const { supabaseUser, loading, signInWithGoogle } = useAuth();
+  const { supabaseUser, loading, authError, signInWithGoogle } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -14,10 +14,11 @@ export default function LoginPage() {
     }
   }, [supabaseUser, loading, router]);
 
-  if (loading) {
+  // If already authenticated, show brief loading while redirecting
+  if (!loading && supabaseUser) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-stone-50 dark:bg-stone-950">
-        <div className="animate-pulse text-stone-500">Loading...</div>
+        <div className="animate-pulse text-stone-500">Redirecting...</div>
       </div>
     );
   }
@@ -54,6 +55,18 @@ export default function LoginPage() {
             </svg>
             Sign in with Google
           </button>
+
+          {authError && (
+            <div className="mt-4 p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg">
+              <p className="text-xs text-red-600 dark:text-red-400 text-center">{authError}</p>
+            </div>
+          )}
+
+          {loading && (
+            <div className="mt-4 text-center">
+              <div className="animate-pulse text-xs text-stone-400">Checking session...</div>
+            </div>
+          )}
 
           <p className="text-xs text-center text-stone-400 dark:text-stone-500 mt-6">
             Authorized personnel only. Access is logged and monitored.

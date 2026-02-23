@@ -25,10 +25,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let isMounted = true;
+    let resolved = false;
+
+    // Failsafe: force loading to false after 10 seconds
+    const timeout = setTimeout(() => {
+      if (isMounted && !resolved) {
+        console.error('Auth loading timed out after 10s');
+        setLoading(false);
+        setAuthError('Connection timed out. Check your Supabase configuration and network.');
+      }
+    }, 10000);
 
     const getSession = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error) console.error('getUser error:', error);
         if (!isMounted) return;
         setSupabaseUser(user);
         if (user) {
@@ -38,6 +49,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error('Auth session error:', err);
         if (isMounted) setAuthError('Failed to load session');
       } finally {
+        resolved = true;
+        clearTimeout(timeout);
         if (isMounted) setLoading(false);
       }
     };
@@ -62,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       isMounted = false;
+      clearTimeout(timeout);
       subscription.unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

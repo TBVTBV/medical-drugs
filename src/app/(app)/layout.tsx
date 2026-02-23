@@ -2,12 +2,13 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import BottomNav from '@/components/BottomNav';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { supabaseUser, dbUser, loading, authError, signOut } = useAuth();
   const router = useRouter();
+  const [showSlow, setShowSlow] = useState(false);
 
   useEffect(() => {
     if (!loading && !supabaseUser) {
@@ -15,10 +16,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [supabaseUser, loading, router]);
 
+  // Show a hint after 3 seconds if still loading
+  useEffect(() => {
+    if (!loading) return;
+    const timer = setTimeout(() => setShowSlow(true), 3000);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="animate-pulse text-muted">Loading...</div>
+        <div className="text-center">
+          <div className="animate-pulse text-muted">Loading...</div>
+          {showSlow && (
+            <div className="mt-4 space-y-2">
+              <p className="text-xs text-muted">Taking longer than expected...</p>
+              <button
+                onClick={() => router.push('/login')}
+                className="text-xs px-3 py-1.5 bg-stone-200 dark:bg-stone-700 rounded-lg hover:bg-stone-300 dark:hover:bg-stone-600 transition-colors text-foreground"
+              >
+                Go to Login
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     );
   }

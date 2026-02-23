@@ -10,5 +10,12 @@ export function createClient() {
     );
   }
 
-  return createBrowserClient(url, key);
+  return createBrowserClient(url, key, {
+    auth: {
+      // Bypass Navigator LockManager which can time out in some environments
+      lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<unknown>) => {
+        return await fn();
+      },
+    },
+  });
 }
